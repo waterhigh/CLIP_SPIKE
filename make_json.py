@@ -26,9 +26,9 @@ def generate_json_from_folder(base_path, output_json_path):
 
 if __name__ == "__main__":
     # 给定数据集路径
-    base_path = "/mnt/workspace/a_pku_spike/video_datasets/hmdb51/annotations/data/hmdb51/train_s"
+    base_path = "/mnt/workspace/a_pku_spike/video_datasets/hmdb51/annotations/data/hmdb51/test"
     # 输出 JSON 文件路径
-    output_json_path = "/mnt/workspace/Clip-spikeCV/Clip-video-spike/hmdb51_train.json"
+    output_json_path = "/mnt/workspace/2_1_Clip-spikeCV/Clip-video-spike/hmdb51_test_15.json"
     
     # 生成 JSON 文件
     generate_json_from_folder(base_path, output_json_path)

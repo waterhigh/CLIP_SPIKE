@@ -60,46 +60,28 @@ def load_config(json_file):
 
 # from train import SpikingVideoDataset  # 这里你应该导入你的数据集类
 
+# 定义数据集类
 class SpikingVideoDataset(Dataset):
     def __init__(self, json_file, spike_h, spike_w, device, step_size=6, num_timesteps=50):
-        """
-        从 JSON 文件读取文件夹路径和标签，并加载脉冲数据。
-        
-        Parameters:
-            json_file (str): JSON 配置文件路径
-            spike_h (int): 图像高度
-            spike_w (int): 图像宽度
-            device (str): 设备 ('cuda' 或 'cpu')
-            step_size (int): 从每个文件夹中选择 .dat 文件的步长（每隔多少个文件选择一个）
-            num_timesteps (int): 每个视频的时间步数（每个 `.dat` 文件包含 50 个时间步）
-        """
         self.device = device
         self.num_timesteps = num_timesteps  # 每个文件中包含 50 个时间步
-        self.step_size = step_size  # 用户手动设置的步长
+        self.step_size = step_size
 
-        # 从 JSON 文件加载数据
         config = load_config(json_file)
         self.dat_folder_paths = list(config.keys())  # 获取文件夹路径
         self.labels = list(config.values())  # 获取对应的标签
 
         self.frames_list = []
 
-        # 读取所有文件夹中的 .dat 文件并转换为视频帧
         for folder_path in self.dat_folder_paths:
             dat_files = sorted([os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.dat')])
-
-            # 使用用户提供的 step_size
-            selected_dat_files = dat_files[::self.step_size]  # 按步长选择文件
+            selected_dat_files = dat_files[::self.step_size]
 
             video_frames = []
-
             for dat_file in selected_dat_files:
-                frames = get_spike_matrix(dat_file, spike_h, spike_w)  # 获取脉冲数据
-
-                # 由于每个文件已经包含 50 个时间步，这里无需再选择时间步
+                frames = get_spike_matrix(dat_file, spike_h, spike_w)
                 video_frames.append(frames)
 
-            # 将多个文件的帧堆叠成一个完整的视频
             video_frames = np.concatenate(video_frames, axis=0)
             self.frames_list.append(video_frames)
 
@@ -107,19 +89,20 @@ class SpikingVideoDataset(Dataset):
         return len(self.frames_list)
 
     def __getitem__(self, idx):
-        frames = self.frames_list[idx]  # 获取视频帧
+        frames = self.frames_list[idx]
 
-        # 如果时间步数大于指定的时间步数，按固定间隔选择时间步
         num_frames = frames.shape[0]
         if num_frames > self.num_timesteps:
-            step_size = (num_frames - 1) // (self.num_timesteps - 1)  # 计算步长，确保包含第一个时间步
-            selected_frames_idx = [i * step_size for i in range(self.num_timesteps)]  # 获取固定间隔的时间步
+            step_size = (num_frames - 1) // (self.num_timesteps - 1)
+            selected_frames_idx = [i * step_size for i in range(self.num_timesteps)]
             frames = frames[selected_frames_idx]
+        elif num_frames < self.num_timesteps:
+            # 填充帧数不足的情况，填充为零
+            padding = self.num_timesteps - num_frames
+            frames = np.pad(frames, ((0, padding), (0, 0), (0, 0)), mode='constant', constant_values=0)
 
-        # 获取视频对应的文本标签
         caption = self.labels[idx % len(self.labels)]  # 获取标签
 
-        # 转换为 tensor
         frames = torch.tensor(frames).float().to(self.device)
 
         return frames, caption
@@ -129,8 +112,8 @@ class SpikingVideoDataset(Dataset):
 
 print("hello!")
 #  配置和路径
-MODEL_PATH = "/mnt/workspace/Clip-spikeCV/Clip-video-spike/models/1_29.pth"  # 已训练的模型路径
-TEST_JSON_PATH = "/mnt/workspace/Clip-spikeCV/Clip-video-spike/hmdb51.json"  # 测试数据集的路径
+MODEL_PATH = "/mnt/workspace/2_1_Clip-spikeCV/Clip-video-spike/models/2_2_500.pth"  # 已训练的模型路径
+TEST_JSON_PATH = "/mnt/workspace/2_1_Clip-spikeCV/Clip-video-spike/hmdb51_30.json"  # 测试数据集的路径
 spike_h = 240  # 图像高度
 spike_w = 320  # 图像宽度
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -167,7 +150,7 @@ else:
 model.eval()
 
 # 加载测试数据集
-dataset = SpikingVideoDataset(TEST_JSON_PATH, spike_h, spike_w, DEVICE, num_timesteps=50)
+dataset = SpikingVideoDataset(TEST_JSON_PATH, spike_h, spike_w, DEVICE, num_timesteps=500)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 # 定义Tokenizer
@@ -178,9 +161,9 @@ correct = 0
 total = 0
 
 with torch.no_grad():  # 不计算梯度
+# 在评估时打印出每个batch的预测和真实标签
     for iteration, (spike_matrices, captions) in enumerate(dataloader):
         spike_matrices = spike_matrices.to(DEVICE)
-        
         # 对文本进行编码
         tokenized_texts = []
         for caption in captions:
@@ -196,13 +179,12 @@ with torch.no_grad():  # 不计算梯度
         # 获取预测结果
         _, predicted = torch.max(logits_per_image, 1)  # 取出每个样本的最大预测值
 
+        # 打印预测的类别和实际标签
+        print(f"Predicted: {predicted}, True Labels: {captions}")
+
         # 计算准确率
         total += len(predicted)
         correct += (predicted == torch.arange(len(spike_matrices)).to(DEVICE)).sum().item()
 
     accuracy = 100 * correct / total
     print(f"Test Accuracy: {accuracy:.2f}%")
-
-# 如果需要，可以将结果保存到文件
-with open("test_results.txt", "w") as f:
-    f.write(f"Test Accuracy: {accuracy:.2f}%\n")
